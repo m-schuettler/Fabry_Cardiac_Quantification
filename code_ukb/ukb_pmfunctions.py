@@ -9,6 +9,7 @@ from glob import glob
 import io
 import itertools
 from math import sqrt
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import nibabel as nib
 import numbers
@@ -30,27 +31,42 @@ def cohens_d(X, Y):
     s = sqrt( (stdev(X)**2) + (stdev(Y)**2) / 2)
     d = abs(mean_difference(X, Y) / s)
     return d
+    
+
+def get_colors(colors, n):
+    '''
+    get n colors from a list of colors
+    '''
+    
+    if n <= len(colors):
+        return colors[:n]
+    else:
+        cmap = mpl.colors.LinearSegmentedColormap.from_list('custom', colors)
+        colors = cmap(np.linspace(0, 1, n))
+        return colors
 
 
-def get_ibm_colors(n):
+def ibm_colors():
     ## IBM Color Blind Safe Palette
     ## -> https://davidmathlogic.com/colorblind/#%23648FFF-%23785EF0-%23DC267F-%23FE6100-%23FFB000
-    ibm_colors = ['#648FFF', '#785EF0', '#DC267F', '#FE6100', '#FFB000']
+    return ['#648FFF', '#785EF0', '#DC267F', '#FE6100', '#FFB000']
+
     
-    if n > 10:
-        print('Picking', n, 'colors from this map might not result in colors that are well distinguishable.')
-    
-    if n <= 5:
-        return ibm_colors[:n]
-    else:
-        ibm_cmap = mpl.colors.LinearSegmentedColormap.from_list('ibm', ibm_colors)
-        cmap_colors = ibm_cmap(np.linspace(0, 1, n))
-        return cmap_colors
-        
+def thesis_colors():
+    # return ['#437080', '#91C5DC', '#78DC9B', '#E7EA5F', '#E0B159']
+    return ['#91C5DC', '#437080', '#A19CDA', '#595990', '#D093A2', '#A04F64']
+
+def cctb_colors():
+    ## first two colors are used in the CCTB logo,
+    ## additional colors are picked to match
+    return ['#265596', '#8DCA80', '#FFF165', '#EA725C']
         
 
+def binary_cmap(c):
+    return mpl.colors.ListedColormap([(0, 0, 0, 0), c])
 
-def auto_crop_ventricle_3D(images, template, padding=5):
+
+def auto_crop_ventricle_3D(images, template, padding=5, return_lims=False):
     '''
     automatically crops the left ventricle in the input CMR image
 
@@ -58,6 +74,7 @@ def auto_crop_ventricle_3D(images, template, padding=5):
         images:         list of CMR image arrays
         template:       template array for template matching
         padding:        number of pixels added as padding in x and y directions
+        return_lims:    if True, x and y limits used for cropping are returned
     
     returns: 
         crops:          list of arrays 
@@ -66,6 +83,7 @@ def auto_crop_ventricle_3D(images, template, padding=5):
 
     crops = []  # gets filled with cropped image arrays
     fails = []  # gets filled with indices of arrays where croppin failed
+    lims = []  # gets filled with x and y limits for cropping
 
     index = 0
     for img in images:
@@ -94,6 +112,7 @@ def auto_crop_ventricle_3D(images, template, padding=5):
         xmax = max_loc[1]+template.shape[0]+int((padding*0.5)+0.5)
         # print(ymin, ymax, xmin, xmax)
         crop = img[xmin:xmax, ymin:ymax, :].copy()
+        lims.append([xmin, xmax, ymin, ymax])
 
         padded_shape = (template.shape[0]+padding, template.shape[1]+padding, t)
 
@@ -105,7 +124,10 @@ def auto_crop_ventricle_3D(images, template, padding=5):
         
         index += 1
 
-    return crops, fails
+    if return_lims:
+        return crops, fails, lims
+    else:
+        return crops, fails
 
 
 def sort_pms(binary):
@@ -130,17 +152,24 @@ def sort_pms(binary):
     return sorted_binary
 
 
-def plot_segmentation(imgs, names, pms, bps, show_bloodpool):
+def plot_segmentation(imgs, names, pms, bps, lvms, colors=[]):
     '''
     plot segmented papillary uscles and optionally blood pool. creates correct number of subplots for any number of images
 
     arguments: 
-        imgs:           list of arrays of cropped CMR images
-        names:          list of names for the created subplots
-        pms:            list of arrays of papillary muscle segmentations
-        bps:            list of contours of blood pools
-        show_bloodpool: if True, bloodpool segmentation is shown as orange contour in the diagnostic plot
+        imgs:   list of arrays of cropped CMR images
+        names:  list of names for the created subplots
+        pms:    list of arrays of papillary muscle segmentations
+        bps:    list of contours of blood pools
+        lvms:   list of arrays of lv myocard segmentations
+        colors: specify list of colors to be used for lvm, bp and pm segmentations, or leave empty for default colors
     '''
+    
+    if colors == []:
+        # colors = get_colors(ibm_colors(), 3)
+        colors = get_colors(thesis_colors(), 3)
+    elif len(colors) != 3:
+        colors = get_colors(colors, 3)
     
     # automatically calculate nrows and ncols
     nimgs = len(imgs)
@@ -167,17 +196,15 @@ def plot_segmentation(imgs, names, pms, bps, show_bloodpool):
         plt.subplot(nrows, ncols, n+1)
 
         plt.imshow(imgs[n], cmap='gray')
-        if show_bloodpool:
-            for contour in bps[n]:
-                try:
-                    plt.plot(contour[:, 1], contour[:, 0], color='orange', lw=1)
-                except:
-                    pass
-        plt.imshow(pms[n], cmap='bwr', alpha=0.3*(pms[n]>0))
+        for contour in bps[n]:
+            try:
+                plt.plot(contour[:, 1], contour[:, 0], color=colors[2], lw=1)
+            except:
+                pass
+        plt.imshow(pms[n], cmap=binary_cmap(colors[0]), alpha=0.4)
+        plt.imshow(lvms[n], cmap=binary_cmap(colors[1]), alpha=0.4)
 
         plt.title(names[n], fontsize=8)
-        plt.yticks([])
-        plt.xticks([])
     
     if nplots < nrows*ncols:
         for n in range(0, nrows*ncols-nplots+1):
@@ -360,25 +387,27 @@ def get_diameters(binary):
     return hd, vd
 
 
-def read_and_segment_dicoms(archive_list, tdim=2, template=[], crop=True, show_bloodpool=False, sort=True, returns='diameters', print_output=True, show_images=True, return_slices=False):
+def read_and_segment_dicoms(archive_list, tdim=2, template=[], crop=True, show_bloodpool=False, sort=True, returns='diameters', print_output=True, show_images=True, return_slices=False, return_lims=False, return_pixelsize=False):
     ''' 
     segment papillary muscles in CMR images in 2D-t
     version for use in UK Biobank RAP
     
     arguments:
-        archive_list:   list of zip file paths or glob
-        tdim:           position of temporal dimension of the image arrays
-        template:       template as array for template matching
-        crop:           should be set to False, if images in images list are already cropped. if True, left ventricle is cropped automatically with crop_ventricle()
-        show_bloodpool: if True, bloodpool segmentation is shown as orange contour in the diagnostic plot
-        sort:           if True, pm segmentation is sorted and only contains papillary muscles (sorted by size)
-        returns:        select, what should be returned:
+        archive_list:      list of zip file paths or glob
+        tdim:              position of temporal dimension of the image arrays
+        template:          template as array for template matching
+        crop:              should be set to False, if images in images list are already cropped. if True, left ventricle is cropped automatically with crop_ventricle()
+        show_bloodpool:    if True, bloodpool segmentation is shown as orange contour in the diagnostic plot
+        sort:              if True, pm segmentation is sorted and only contains papillary muscles (sorted by size)
+        returns:           select, what should be returned:
                             'diameters':        horizontal and vertical diameters are calculated and returned in a dictionary
                             'areas':            pm areas in mm²
                             any other value:    nothing is returned
-        print_output:   if True, print output. if False, only print important output
-        show_images:    if True, show diagnostic figures
-        return_slices:  if True, returns selected Z and T slices as a list
+        print_output:      if True, print output. if False, only print important output
+        show_images:       if True, show diagnostic figures
+        return_slices:     if True, returns selected Z and T slices as a list
+        return_lims:       if True, returns x and y limits used for cropping
+        return_pixelsize:  if True, returns pixel size
 
     returns:
         imgs:           list of cropped image arrays
@@ -389,6 +418,10 @@ def read_and_segment_dicoms(archive_list, tdim=2, template=[], crop=True, show_b
             pmareas:            list containing pm areas in mm²
         if return_slices:
             selected_slices:    nested list of selected Z and T slices
+        if return_lims:
+            crop_lims:          nested list of x and y limits used for cropping
+        if return_pixelsize:
+            px_list:            list of pixel sized for conversion to mm
     '''
 
     if print_output:
@@ -399,6 +432,8 @@ def read_and_segment_dicoms(archive_list, tdim=2, template=[], crop=True, show_b
     imgs = []       # gets filled with cropped images for diagnostic plot
     pms = []        # gets filled with pm segmentations for diagnostic plot
     bps = []        # gets filled with pool contours for diagnostic plot
+    crop_lims = []  # gets filled with x and y limits for cropping
+    px_list = []    # gets filled with pixel sizes
     failcount = 0   # count failed diameter measurements
 
     if returns == 'diameters':
@@ -422,12 +457,17 @@ def read_and_segment_dicoms(archive_list, tdim=2, template=[], crop=True, show_b
         name = os.path.basename(archive_path).removesuffix('_2_0')
         image, px = read_dicom(archive_path, print_output=False, return_pixel_size=True)
         image = image[:, :, z, :]  # select z slice
+        px_list.append(px)
 
         # crop images
         if crop:
             template = template.astype(np.float32)
             image = image.astype(np.float32)
-            img, fail = auto_crop_ventricle_3D([image], template)
+            if return_lims:
+                img, fail, c = auto_crop_ventricle_3D([image], template, return_lims=True)
+                crop_lims.append(c[0])
+            else:
+                img, fail = auto_crop_ventricle_3D([image], template)
             if fail != []:
                 if print_output:
                     print(name, 'could not be cropped successfully and is omitted from further processing.')
@@ -563,24 +603,24 @@ def read_and_segment_dicoms(archive_list, tdim=2, template=[], crop=True, show_b
         namelist = [namelist[i]+' ('+tslc[i]+'/50)' for i in range(0, min([len(namelist), len(tslc)]))]
         plot_segmentation(imgs, namelist, pms, bps, show_bloodpool=show_bloodpool)
         
+    # set up returns
     segs = {'pm': pms, 'bp': bps}
+    
+    return_list = [imgs, segs]
     if returns == 'diameters':
+        return_list.append(diams)
         if failcount != 0 and print_output:
             print('Measurement failed for', failcount, 'out of', len(imgs), 'images.')
-        if return_slices:
-            return imgs, segs, diams, selected_slices
-        else:
-            return imgs, segs, diams
-    elif returns == 'areas':
-        if return_slices:
-            return imgs, segs, pmareas, selected_slices
-        else:
-            return imgs, segs, pmareas
-    else:
-        if return_slices:
-            return imgs, segs, selected_slices
-        else:
-            return imgs, segs
+    if returns == 'areas':
+        return_list.append(pmareas)
+    if return_slices:
+        return_list.append(selected_slices)
+    if return_lims:
+        return_list.append(crop_lims)
+    if return_pixelsize:
+        return_list.append(px_list)
+    
+    return return_list
 
         
 def get_all_measurements(image_id, template, tdim=2):
@@ -611,12 +651,14 @@ def get_all_measurements(image_id, template, tdim=2):
                     'vdiam2':       [], 
                     'area':         [], 
                     'num':          [],
-                    'lv/pm ratio':  []}
+                    'pm/lv ratio':  [],
+                    'ma':           [],
+                    'mwt':          []}
     segmentations = {'imgs': [], 'bps': [], 'pms': [], 'lvs': [], 'names': []}
 
     # get path to zip archive containing CMR scan DICOMs
     img_path = glob('/mnt/project/Bulk/Heart MRI/Short axis/'+str(image_id)[:2]+'/'+str(image_id)+'*_2_0.zip')[0]
-
+    
     # measure diameters
     img, seg, d = read_and_segment_dicoms([img_path], tdim=tdim, template=template, returns='diameters', print_output=False, show_images=False)
 
@@ -628,20 +670,27 @@ def get_all_measurements(image_id, template, tdim=2):
     for i, l in zip(flat, list(measurements.keys())[:4]):
         measurements[l] = i
     
-    # measure pm area and num
-    img, seg, a, s = read_and_segment_dicoms([img_path], tdim=2, template=template, sort=False, print_output=False, show_images=False, returns='areas', return_slices=True)
+    # measure pm area, num and pm/lv ratio
+    img, seg, a, s, l, px = read_and_segment_dicoms([img_path], tdim=2, template=template, sort=False, print_output=False, show_images=False, returns='areas', return_slices=True, return_lims=True, return_pixelsize=True)
+    l = l[0]
+    px = px[0]
 
-    measurements['area'] = a
+    measurements['area'] = a[0]
 
     _, n = ski.measure.label(seg['pm'][0], return_num=True, connectivity=1)
     measurements['num'] = n
+
+    bp_sum = np.sum(seg['bp'][0])
+    pm_sum = np.sum(seg['pm'][0])
+    measurements['pm/lv ratio'] = pm_sum/bp_sum
+
 
     # save segmentations
     segmentations['imgs'] = img[0]
     segmentations['bps'] = seg['bp'][0]
     segmentations['pms'] = seg['pm'][0]
     
-    # measure lv/pm ratio
+    # measure ma and mwt
     tmp_path = '/opt/notebooks/tmp/'        # prepare img file for LV segmentation
     id_path = tmp_path+str(image_id)
     if not os.path.exists(tmp_path):
@@ -655,15 +704,18 @@ def get_all_measurements(image_id, template, tdim=2):
     nib.save(img, id_path+'/sa.nii.gz')
 
     os.system('export PYTHONPATH=/opt/notebooks:$PYTHONPATH && cd /opt/notebooks/ukbb_cardiac/ && python3 demo_pipeline_2.py {0}'.format(tmp_path));
-
+    
     z, t = s[0] # unpack selected Z and T slices from PM segmentation
-    lv_seg = nib.load(id_path+'/seg_sa.nii.gz').get_fdata()[:, :, z, t]
+    lv_seg = nib.load(id_path+'/seg_sa.nii.gz').get_fdata()
     lv_seg = lv_seg == 2
-
-    lv_sum = np.sum(lv_seg)
-    pm_sum = np.sum(seg['pm'][0])
-    measurements['lv/pm ratio'] = lv_sum/pm_sum
-
+    lv_seg = lv_seg[l[2]:l[3], l[0]:l[1], z, t].T
+    
+    measurements['ma'] = np.sum(lv_seg)*px*px
+    
+    mwt = pd.read_csv(id_path+'/wall_thickness_ED_max.csv').iloc[-1]['Thickness_Max']  ## this is (probably?) in mm already
+    
+    measurements['mwt'] = mwt
+    
     # save segmentations
     segmentations['lvs'] = lv_seg
     name = str(image_id)+' (z='+str(z)+', t='+str(t)+')'
@@ -675,161 +727,363 @@ def get_all_measurements(image_id, template, tdim=2):
     return measurements, segmentations
 
 
-def plot_measurements(measurements_list, labels):
+def plot_measurements(measurements_list, labels, colors=[], save_stats=False):
     '''
     Plot measurements as violin plots
     
     arguments:
         measurements_list:  list of dicts containing measurements
         labels:             list of group names
+        colors:             specify list of colors to be used for lvm, bp and pm segmentations, or leave empty for default colors
+        save_stats:         if True, statistics are saved to /opt/notebooks/results/stats.csv
     '''
-
-    ibm_colors = ['#648FFF', '#785EF0', '#DC267F', '#FE6100', '#FFB000']
+    
+    if colors == []:
+        # colors = get_colors(ibm_colors(), len(measurements_list))
+        colors = get_colors(thesis_colors(), len(measurements_list))
+    elif len(colors) != len(measurements_list):
+        colors = get_colors(colors, len(measurements_list))
+    
+    colors = [mpl.colors.to_rgb(c) for c in colors]
+    alpha = 0.8
+    
+    flierprops = dict(marker='.', markersize=6)
 
     # inititate statistics dataframe
-    stats = ['p', 'd', 'MD']
-    meas = ['hor.', 'vert.', 'area', 'num', 'LV/PM']
-    statnames = [s+'('+m+')' for s in stats for m in meas]
-    combs = itertools.combinations(labels, 2)
-    combnames = [a+' vs '+b for a, b in combs]
-    statistics = pd.DataFrame(columns=combnames, index=statnames)
+    if len(measurements_list) > 1:
+        stats = ['p', 'd', 'MD']
+        meas = ['hor.', 'vert.', 'area', 'num', 'pm/lv', 'ma', 'mwt']
+        statnames = [s+'('+m+')' for s in stats for m in meas]
+        combs = itertools.combinations(labels, 2)
+        combnames = [a+' vs '+b for a, b in combs]
+        statistics = pd.DataFrame(columns=combnames, index=statnames)
 
-    nsubs = sum([m in measurements_list[0] for m in ['hdiam1', 'area', 'num', 'lv/pm ratio']])
-    fig, _ = plt.subplots(1, nsubs, figsize=(nsubs*3, 4))
+    nsubs = sum([m in measurements_list[0] for m in ['hdiam1', 'area', 'num', 'pm/lv ratio', 'ma', 'mwt']])
+    ncols = int((nsubs+1)/2)
+    fig, _ = plt.subplots(1, ncols, figsize=(ncols*3, 5))
 
     sub = 1
 
     # plot diameters
     if 'hdiam1' in list(measurements_list[0].keys()):
-        plt.subplot(1, nsubs, sub)
+        plt.subplot(2, ncols, sub)
 
         m = []
         for group in measurements_list:     # structure measurements for plot
-            m.extend([group['hdiam1']+group['hdiam2'], group['vdiam1']+group['vdiam2']])
+            m.extend([group['hdiam1']+group['hdiam2']])
+        for group in measurements_list:
+            m.extend([group['vdiam1']+group['vdiam2']])
 
-        viols = plt.violinplot(m, positions=range(0, len(measurements_list)*2), showmeans=True, showextrema=True)
-
-        l = ['hor.', 'vert.']*(len(measurements_list))
-        plt.xticks(range(0, len(measurements_list)*2), l, fontsize='small')
-
-        plt.ylabel('diameters [mm]')
-        for item in viols:
-            if item == 'bodies':
-                for body, color in zip(viols[item], [c for c in ibm_colors for _ in range(2)]):
-                    body.set_color(color)
-            else:
-                viols[item].set_colors([c for c in ibm_colors for _ in range(2)])
+        # viols = plt.violinplot(m, positions=range(0, len(measurements_list)*2), showmeans=True, showextrema=True)
+        # for item in viols:
+        #     if item == 'bodies':
+        #         for body, color in zip(viols[item], [c for c in colors+colors]):
+        #             body.set_color(color)
+        #     else:
+        #         viols[item].set_colors([c for c in colors+colors])
+        
+        boxes = plt.boxplot(m, positions=range(0, len(measurements_list)*2), flierprops=flierprops, patch_artist=True)
+        for patch, color in zip(boxes['boxes'], [c for c in colors+colors]):
+            patch.set_facecolor(color+(alpha,))
+        for patch in boxes['medians']:
+            patch.set_color('black')
+        
+        l = ['hor.', 'vert.']
+        pos = [len(measurements_list)/2-0.5, len(measurements_list)/2+len(measurements_list)-0.5]
+        plt.xticks(pos, l, fontsize='small')
+        plt.ylabel('PM diameters [mm]')
         
         sub += 1
 
         # calculate statistics
-        mh = [[group['hdiam1']+group['hdiam2']] for group in measurements_list]
-        mv = [[group['vdiam1']+group['vdiam2']] for group in measurements_list]
-        for cbh, cbv, cbn in zip(itertools.combinations(mh, 2), itertools.combinations(mv, 2), combnames):
-            # p value
-            statistics.loc['p(hor.)', cbn] = scipy.stats.mannwhitneyu(cbh[0][0], cbh[1][0])[1]
-            statistics.loc['p(vert.)', cbn] = scipy.stats.mannwhitneyu(cbv[0][0], cbv[1][0])[1]
+        if len(measurements_list) > 1:
+            mh = [[group['hdiam1']+group['hdiam2']] for group in measurements_list]
+            mv = [[group['vdiam1']+group['vdiam2']] for group in measurements_list]
+            for cbh, cbv, cbn in zip(itertools.combinations(mh, 2), itertools.combinations(mv, 2), combnames):
+                # p value
+                statistics.loc['p(hor.)', cbn] = scipy.stats.mannwhitneyu(cbh[0][0], cbh[1][0])[1]
+                statistics.loc['p(vert.)', cbn] = scipy.stats.mannwhitneyu(cbv[0][0], cbv[1][0])[1]
 
-            # cohen's d
-            statistics.loc['d(hor.)', cbn] = cohens_d(cbh[0][0], cbh[1][0])
-            statistics.loc['d(vert.)', cbn] = cohens_d(cbv[0][0], cbv[1][0])
+                # cohen's d
+                statistics.loc['d(hor.)', cbn] = cohens_d(cbh[0][0], cbh[1][0])
+                statistics.loc['d(vert.)', cbn] = cohens_d(cbv[0][0], cbv[1][0])
 
-            # mean difference
-            statistics.loc['MD(hor.)', cbn] = mean_difference(cbh[0][0], cbh[1][0])
-            statistics.loc['MD(vert.)', cbn] = mean_difference(cbv[0][0], cbv[1][0])
+                # mean difference
+                statistics.loc['MD(hor.)', cbn] = mean_difference(cbh[0][0], cbh[1][0])
+                statistics.loc['MD(vert.)', cbn] = mean_difference(cbv[0][0], cbv[1][0])
+
+            # annotate significance
+            if len(measurements_list) == 2:
+                plt.annotate('p = '+str(np.round(statistics.loc['p(hor.)', cbn], 5)),
+                             xytext=(0.5, 0.92),
+                             textcoords=('data', 'axes fraction'), 
+                             xy=(0.5, 0.9), 
+                             xycoords=('data', 'axes fraction'), 
+                             ha='center', va='bottom', 
+                             arrowprops=dict(arrowstyle='-[, widthB=2'))
+                plt.annotate('p = '+str(np.round(statistics.loc['p(vert.)', cbn], 5)),
+                             xytext=(2.5, 0.92),
+                             textcoords=('data', 'axes fraction'), 
+                             xy=(2.5, 0.9), 
+                             xycoords=('data', 'axes fraction'), 
+                             ha='center', va='bottom', 
+                             arrowprops=dict(arrowstyle='-[, widthB=2'))
+                _, t = plt.ylim()
+                plt.ylim(top=t*1.1)
     
     # plot areas
     if 'area' in list(measurements_list[0].keys()):
-        plt.subplot(1, nsubs, sub)
+        plt.subplot(2, ncols, sub)
 
-        m = [[v[0] for v in d['area']] for d in measurements_list]  # structure measurements for plot
-        viols = plt.violinplot(m, positions=range(0, len(measurements_list)), showmeans=True, showextrema=True)
+        m = [group['area'] for group in measurements_list]  # structure measurements for plot
+        # viols = plt.violinplot(m, positions=range(0, len(measurements_list)), showmeans=True, showextrema=True)
+        # for item in viols:
+        #     if item == 'bodies':
+        #         for body, color in zip(viols[item], colors):
+        #             body.set_color(color)
+        #     else:
+        #         viols[item].set_colors(colors)
+        
+        boxes = plt.boxplot(m, positions=range(0, len(measurements_list)), widths=0.5, flierprops=flierprops, patch_artist=True)
+        for patch, color in zip(boxes['boxes'], colors):
+            patch.set_facecolor(color+(alpha,))
+        for patch in boxes['medians']:
+            patch.set_color('black')
         
         plt.xticks([]);
-        plt.ylabel('areas [mm²]')
-        for item in viols:
-            if item == 'bodies':
-                for body, color in zip(viols[item], ibm_colors):
-                    body.set_color(color)
-            else:
-                viols[item].set_colors(ibm_colors)
+        plt.ylabel('PM areas [mm²]')
 
         sub += 1
 
         # calculate statistics
-        for cb, cbn in zip(itertools.combinations(m, 2), combnames):
-            # p value
-            statistics.loc['p(area)', cbn] = scipy.stats.mannwhitneyu(cb[0], cb[1])[1]
+        if len(measurements_list) > 1:
+            for cb, cbn in zip(itertools.combinations(m, 2), combnames):
+                # p value
+                statistics.loc['p(area)', cbn] = scipy.stats.mannwhitneyu(cb[0], cb[1])[1]
 
-            # cohen's d
-            statistics.loc['d(area)', cbn] = cohens_d(cb[0], cb[1])
+                # cohen's d
+                statistics.loc['d(area)', cbn] = cohens_d(cb[0], cb[1])
 
-            # mean difference
-            statistics.loc['MD(area)', cbn] = mean_difference(cb[0], cb[1])
-    
+                # mean difference
+                statistics.loc['MD(area)', cbn] = mean_difference(cb[0], cb[1])
+
+            # annotate significance
+            if len(measurements_list) == 2:
+                plt.annotate('p = '+str(np.round(statistics.loc['p(area)', cbn], 5)),
+                             xytext=(0.5, 0.92),
+                             textcoords=('data', 'axes fraction'), 
+                             xy=(0.5, 0.9), 
+                             xycoords=('data', 'axes fraction'), 
+                             ha='center', va='bottom', 
+                             arrowprops=dict(arrowstyle='-[, widthB=5'))
+                _, t = plt.ylim()
+                plt.ylim(top=t*1.1)
+
     # plot pm numbers
     if 'num' in list(measurements_list[0].keys()):
-        plt.subplot(1, nsubs, sub)
+        plt.subplot(2, ncols, sub)
 
         m = [group['num'] for group in measurements_list]  # structure measurements for plot
-        viols = plt.violinplot(m, positions=range(0, len(measurements_list)), showmeans=True, showextrema=True)
+        # viols = plt.violinplot(m, positions=range(0, len(measurements_list)), showmeans=True, showextrema=True)
+        # for item in viols:
+        #     if item == 'bodies':
+        #         for body, color in zip(viols[item], colors):
+        #             body.set_color(color)
+        #     else:
+        #         viols[item].set_colors(colors)
+        
+        boxes = plt.boxplot(m, positions=range(0, len(measurements_list)), widths=0.5, flierprops=flierprops, patch_artist=True)
+        for patch, color in zip(boxes['boxes'], colors):
+            patch.set_facecolor(color+(alpha,))
+        for patch in boxes['medians']:
+            patch.set_color('black')
         
         plt.xticks([]);
         plt.ylabel('PM number')
-        for item in viols:
-            if item == 'bodies':
-                for body, color in zip(viols[item], ibm_colors):
-                    body.set_color(color)
-            else:
-                viols[item].set_colors(ibm_colors)
         
         sub += 1
 
         # calculate statistics
-        for cb, cbn in zip(itertools.combinations(m, 2), combnames):
-            # p value
-            statistics.loc['p(num)', cbn] = scipy.stats.mannwhitneyu(cb[0], cb[1])[1]
+        if len(measurements_list) > 1:
+            for cb, cbn in zip(itertools.combinations(m, 2), combnames):
+                # p value
+                statistics.loc['p(num)', cbn] = scipy.stats.mannwhitneyu(cb[0], cb[1])[1]
 
-            # cohen's d
-            statistics.loc['d(num)', cbn] = cohens_d(cb[0], cb[1])
+                # cohen's d
+                statistics.loc['d(num)', cbn] = cohens_d(cb[0], cb[1])
 
-            # mean difference
-            statistics.loc['MD(num)', cbn] = mean_difference(cb[0], cb[1])
+                # mean difference
+                statistics.loc['MD(num)', cbn] = mean_difference(cb[0], cb[1])
+
+            # annotate significance
+            if len(measurements_list) == 2:
+                plt.annotate('p = '+str(np.round(statistics.loc['p(num)', cbn], 5)),
+                             xytext=(0.5, 0.92),
+                             textcoords=('data', 'axes fraction'), 
+                             xy=(0.5, 0.9), 
+                             xycoords=('data', 'axes fraction'), 
+                             ha='center', va='bottom', 
+                             arrowprops=dict(arrowstyle='-[, widthB=5'))
+                _, t = plt.ylim()
+                plt.ylim(top=t*1.1)
     
-    # plot LV/PM ratio
-    if 'lv/pm ratio' in list(measurements_list[0].keys()):
-        plt.subplot(1, nsubs, sub)
+    # plot pm/lv ratio
+    if 'pm/lv ratio' in list(measurements_list[0].keys()):
+        plt.subplot(2, ncols, sub)
 
-        m = [group['lv/pm ratio'] for group in measurements_list]  # structure measurements for plot
-        viols = plt.violinplot(m, positions=range(0, len(measurements_list)), showmeans=True, showextrema=True)
+        m = [group['pm/lv ratio'] for group in measurements_list]  # structure measurements for plot
+        # viols = plt.violinplot(m, positions=range(0, len(measurements_list)), showmeans=True, showextrema=True)
+        # for item in viols:
+        #     if item == 'bodies':
+        #         for body, color in zip(viols[item], colors):
+        #             body.set_color(color)
+        #     else:
+        #         viols[item].set_colors(colors)
+        
+        boxes = plt.boxplot(m, positions=range(0, len(measurements_list)), widths=0.5, flierprops=flierprops, patch_artist=True)
+        for patch, color in zip(boxes['boxes'], colors):
+            patch.set_facecolor(color+(alpha,))
+        for patch in boxes['medians']:
+            patch.set_color('black')
 
         plt.xticks([]);
-        plt.ylabel('LV/PM ratio')
-        for item in viols:
-            if item == 'bodies':
-                for body, color in zip(viols[item], ibm_colors):
-                    body.set_color(color)
-            else:
-                viols[item].set_colors(ibm_colors)
+        plt.ylabel('PM/LV ratio')
         
         sub += 1
 
         # calculate statistics
-        for cb, cbn in zip(itertools.combinations(m, 2), combnames):
-            # p value
-            statistics.loc['p(LV/PM)', cbn] = scipy.stats.mannwhitneyu(cb[0], cb[1])[0]
+        if len(measurements_list) > 1:
+            for cb, cbn in zip(itertools.combinations(m, 2), combnames):
+                # p value
+                statistics.loc['p(pm/lv)', cbn] = scipy.stats.mannwhitneyu(cb[0], cb[1])[1]
 
-            # cohen's d
-            statistics.loc['d(LV/PM)', cbn] = cohens_d(cb[0], cb[1])
+                # cohen's d
+                statistics.loc['d(pm/lv)', cbn] = cohens_d(cb[0], cb[1])
 
-            # mean difference
-            statistics.loc['MD(LV/PM)', cbn] = mean_difference(cb[0], cb[1])
+                # mean difference
+                statistics.loc['MD(pm/lv)', cbn] = mean_difference(cb[0], cb[1])
+
+            # annotate significance
+            if len(measurements_list) == 2:
+                plt.annotate('p = '+str(np.round(statistics.loc['p(pm/lv)', cbn], 5)),
+                             xytext=(0.5, 0.92),
+                             textcoords=('data', 'axes fraction'), 
+                             xy=(0.5, 0.9), 
+                             xycoords=('data', 'axes fraction'), 
+                             ha='center', va='bottom', 
+                             arrowprops=dict(arrowstyle='-[, widthB=5'))
+                _, t = plt.ylim()
+                plt.ylim(top=t*1.1)
+            
+    if 'ma' in list(measurements_list[0].keys()):
+        plt.subplot(2, ncols, sub)
+        
+        m = [group['ma'] for group in measurements_list]  # structure measurements for plot
+        # viols = plt.violinplot(m, positions=range(0, len(measurements_list)), showmeans=True, showextrema=True)
+        # for item in viols:
+        #     if item == 'bodies':
+        #         for body, color in zip(viols[item], colors):
+        #             body.set_color(color)
+        #     else:
+        #         viols[item].set_colors(colors)
+        
+        boxes = plt.boxplot(m, positions=range(0, len(measurements_list)), widths=0.5, flierprops=flierprops, patch_artist=True)
+        for patch, color in zip(boxes['boxes'], colors):
+            patch.set_facecolor(color+(alpha,))
+        for patch in boxes['medians']:
+            patch.set_color('black')
+        
+        plt.xticks([]);
+        plt.ylabel('myocardial area [mm²]')
+        
+        sub += 1
+        
+        # calculate statistics
+        if len(measurements_list) > 1:
+            for cb, cbn in zip(itertools.combinations(m, 2), combnames):
+                # p value
+                statistics.loc['p(ma)', cbn] = scipy.stats.mannwhitneyu(cb[0], cb[1])[1]
+
+                # cohen's d
+                #statistics.loc['d(ma)', cbn] = cohens_d(cb[0], cb[1])
+                statistics.loc['d(ma)', cbn] = cohens_d(cb[0], cb[1])
+
+                # mean difference
+                statistics.loc['MD(ma)', cbn] = mean_difference(cb[0], cb[1])
+
+            # annotate significance
+            if len(measurements_list) == 2:
+                plt.annotate('p = '+str(np.round(statistics.loc['p(ma)', cbn], 5)),
+                             xytext=(0.5, 0.92),
+                             textcoords=('data', 'axes fraction'), 
+                             xy=(0.5, 0.9), 
+                             xycoords=('data', 'axes fraction'), 
+                             ha='center', va='bottom', 
+                             arrowprops=dict(arrowstyle='-[, widthB=5'))
+                _, t = plt.ylim()
+                plt.ylim(top=t*1.1)
+            
+    if 'mwt' in list(measurements_list[0].keys()):
+        plt.subplot(2, ncols, sub)
+        
+        m = [group['mwt'] for group in measurements_list]  # structure measurements for plot
+        # viols = plt.violinplot(m, positions=range(0, len(measurements_list)), showmeans=True, showextrema=True)
+        # for item in viols:
+        #     if item == 'bodies':
+        #         for body, color in zip(viols[item], colors):
+        #             body.set_color(color)
+        #     else:
+        #         viols[item].set_colors(colors)
+        
+        boxes = plt.boxplot(m, positions=range(0, len(measurements_list)), widths=0.5, flierprops=flierprops, patch_artist=True)
+        for patch, color in zip(boxes['boxes'], colors):
+            patch.set_facecolor(color+(alpha,))
+        for patch in boxes['medians']:
+            patch.set_color('black')
+        
+        plt.xticks([]);
+        plt.ylabel('max. wall thickness [mm]')
+        
+        sub += 1
+        
+        # calculate statistics
+        if len(measurements_list) > 1:
+            for cb, cbn in zip(itertools.combinations(m, 2), combnames):
+                # p value
+                statistics.loc['p(mwt)', cbn] = scipy.stats.mannwhitneyu(cb[0], cb[1])[1]
+
+                # cohen's d
+                #statistics.loc['d(ma)', cbn] = cohens_d(cb[0], cb[1])
+                statistics.loc['d(mwt)', cbn] = cohens_d(cb[0], cb[1])
+
+                # mean difference
+                statistics.loc['MD(mwt)', cbn] = mean_difference(cb[0], cb[1])
+
+            # annotate significance
+            if len(measurements_list) == 2:
+                plt.annotate('p = '+str(np.round(statistics.loc['p(mwt)', cbn], 5)),
+                             xytext=(0.5, 0.92),
+                             textcoords=('data', 'axes fraction'), 
+                             xy=(0.5, 0.9), 
+                             xycoords=('data', 'axes fraction'), 
+                             ha='center', va='bottom', 
+                             arrowprops=dict(arrowstyle='-[, widthB=5'))
+                _, t = plt.ylim()
+                plt.ylim(top=t*1.1)
     
-    fig.legend(labels=labels, loc='upper center', bbox_to_anchor=(0.5, 1.10), ncols=len(measurements_list))
+    patches = [mpl.patches.Patch(facecolor=c+(alpha,), edgecolor='black', label=l) for c, l in zip(colors, labels)]
+    
+    fig.legend(handles=patches, loc='upper center', bbox_to_anchor=(0.5, 1.10), ncols=len(measurements_list))
     plt.tight_layout()
 
-    # print statistics
-    print(statistics)
+    # print and save statistics
+    if len(measurements_list) > 1:
+        print(statistics)
+    
+    if save_stats:
+        stat_path = '/opt/notebooks/results/stats.csv'
+        statistics.to_csv(stat_path)
+        print('Statistics are saved to', stat_path+'.')
 
 
 def find_matches(df, matchtraits, nmatches, template, match_behaviour='softmatch'):
@@ -865,7 +1119,9 @@ def find_matches(df, matchtraits, nmatches, template, match_behaviour='softmatch
                     'vdiam2':       [], 
                     'area':         [], 
                     'num':          [],
-                    'lv/pm ratio':  []}
+                    'pm/lv ratio':  [], 
+                    'ma':           [],
+                    'mwt':          []}
     segmentations = {'imgs': [], 'bps': [], 'pms': [], 'lvs': [], 'names': []}
     
     if match_behaviour == 'softmatch':
@@ -937,7 +1193,7 @@ def quantify_pms(fabry_table_path, control_table_path, template_array, traits=[2
         'diameters':    measure horizontal and vertical diameters in mm (according to 10.1186/s12872-023-03463-w)
         'areas':        measure cross-section area in mm²
         'numbers':      count PM objects
-        'lv/pm ratios': segment LVs (using Wenjia Bai's ukbb_cardiac), measure LV/PM ratio
+        'pm/lv ratios': segment LVs (using Wenjia Bai's ukbb_cardiac), measure pm/lv ratio
 
     arguments:
         fabry_table_path:   file path to table created from fabry imaging cohort containing traits to be matched
@@ -954,7 +1210,7 @@ def quantify_pms(fabry_table_path, control_table_path, template_array, traits=[2
                                 'diameters':    measure horizontal and vertical diameters in mm (according to 10.1186/s12872-023-03463-w)
                                 'areas':        measure cross-section area in mm²
                                 'numbers':      count PM objects
-                                'lv/pm ratios': segment LVs (using Wenjia Bai's ukbb_cardiac), measure LV/PM ratio
+                                'pm/lv ratios': segment LVs (using Wenjia Bai's ukbb_cardiac), measure pm/lv ratio
 
     returns:
         f_measurements: dataframe containing measurements for fabry group
@@ -969,12 +1225,15 @@ def quantify_pms(fabry_table_path, control_table_path, template_array, traits=[2
 
     print('___ '*25, end='\n\n')
     print('\tFabry cases:\t', fabry_table.shape[0])
-    print('\tMatches each:\t', nmatches)
-    print('\tTraits matched:\t', traitnames)
+    if nmatches == 0:
+        print('\tNo control group matching.')
+    else:
+        print('\tMatches each:\t', nmatches)
+        print('\tTraits matched:\t', traitnames)
     print('___ '*25, end='\n')
 
     # create measurements dicts
-    keys = ['id', 'hdiam1', 'hdiam2', 'vdiam1', 'vdiam2', 'area', 'num', 'lv/pm ratio']
+    keys = ['id', 'hdiam1', 'hdiam2', 'vdiam1', 'vdiam2', 'area', 'num', 'pm/lv ratio', 'ma', 'mwt']
     f_measurements = {key: [] for key in keys}
     c_measurements = {key: [] for key in keys+['match for']}
 
@@ -1007,33 +1266,37 @@ def quantify_pms(fabry_table_path, control_table_path, template_array, traits=[2
             continue
         
         f_measurements['id'].append(pid)
-        for key in ['hdiam1', 'hdiam2', 'vdiam1', 'vdiam2', 'area', 'num', 'lv/pm ratio']:
+        for key in ['hdiam1', 'hdiam2', 'vdiam1', 'vdiam2', 'area', 'num', 'pm/lv ratio', 'ma', 'mwt']:
             f_measurements[key].append(m[key])
         s['names'] = '(F) '+s['names']
         [segmentations[k].append(s[k]) for k in list(s.keys())]
         
         # match controls
-        print('Finding and quantifying matching controls...', end='\r')
-        matchtraits = dict([[t, patient[t]] for t in traitnames])   # get traits for this patient
+        if nmatches != 0:
+            print('Finding and quantifying matching controls...', end='\r')
+            matchtraits = dict([[t, patient[t]] for t in traitnames])   # get traits for this patient
 
-        mids, failed_ids, m, s = find_matches(control_table, matchtraits, nmatches, template_array, match_behaviour=match_behaviour)
-        
-        c_measurements['id'].extend(mids)
-        c_measurements['match for'].extend([pid]*len(mids))
-        for key in ['hdiam1', 'hdiam2', 'vdiam1', 'vdiam2', 'area', 'num', 'lv/pm ratio']:
-            c_measurements[key].extend(m[key])
-        
-        for i in mids + failed_ids:   # remove all tested ids so they aren't matched again
-            control_table = control_table[control_table['Participant ID'] != i]
+            mids, failed_ids, m, s = find_matches(control_table, matchtraits, nmatches, template_array, match_behaviour=match_behaviour)
+
+            c_measurements['id'].extend(mids)
+            c_measurements['match for'].extend([pid]*len(mids))
+            for key in ['hdiam1', 'hdiam2', 'vdiam1', 'vdiam2', 'area', 'num', 'pm/lv ratio', 'ma', 'mwt']:
+                c_measurements[key].extend(m[key])
+
+            for i in mids + failed_ids:   # remove all tested ids so they aren't matched again
+                control_table = control_table[control_table['Participant ID'] != i]
     
     print('\nPlotting results...                    ', end='\r')
     
     # plot measurements
-    plot_measurements([c_measurements, f_measurements], labels=['control', 'Fabry'])
-    
+    if nmatches == 0:
+        plot_measurements([f_measurements], labels=['Fabry'])
+    else:
+        plot_measurements([c_measurements, f_measurements], labels=['control', 'Fabry'])
+
     # plot segmentations
     if show_segmentations:
-        plot_segmentation(segmentations['imgs'], segmentations['names'], segmentations['pms'], segmentations['bps'], show_bloodpool=True)
+        plot_segmentation(segmentations['imgs'], segmentations['names'], segmentations['pms'], segmentations['bps'], segmentations['lvs'])
 
     print('Done.                     ')    
     
