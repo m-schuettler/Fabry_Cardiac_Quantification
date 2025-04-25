@@ -25,6 +25,9 @@ Here is a general outline of what our pipeline does:
 7. Tests statistics and plots measurements as violin plots,
 8. Plots segmentations.
 
+Here is a graphical overview of what the main function `quantify_pms()` does:
+
+<img src="data/plots_and_figs/code_structure.png" width="500">
 
 ## Metrics
 
