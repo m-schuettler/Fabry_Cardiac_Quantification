@@ -52,9 +52,27 @@ def ibm_colors():
     return ['#648FFF', '#785EF0', '#DC267F', '#FE6100', '#FFB000']
 
     
-def thesis_colors():
-    # return ['#437080', '#91C5DC', '#78DC9B', '#E7EA5F', '#E0B159']
-    return ['#91C5DC', '#437080', '#A19CDA', '#595990', '#D093A2', '#A04F64']
+def thesis_colors(s='md'):
+    '''
+    arguments:
+        s:      string specifying the colors that are returned:
+                    'l': only light variations,
+                    'm': only medium variations,
+                    'd': only dark variations,
+                    or any combination
+    '''
+    
+    l = ["#6fb9ca", "#d2899f", "#e28e61", "#8f9ec9", "#6fab7a"]   ## teal, pink, orange, purple, green
+    m = ["#388c9e", "#a44c68", "#c06141", "#576ba3", "#42754b"]
+    d = ["#035f71", "#761333", "#88341a", "#324375", "#1c4c28"]
+    
+    options = {'l': l, 'm': m, 'd': d}
+    selected = [options[var] for var in s if var in options]
+    
+    if len(selected) == 1:
+        return selected[0]
+    else:
+        return [color for group in zip(*selected) for color in group]
 
 def cctb_colors():
     ## first two colors are used in the CCTB logo,
@@ -166,8 +184,7 @@ def plot_segmentation(imgs, names, pms, bps, lvms, colors=[]):
     '''
     
     if colors == []:
-        # colors = get_colors(ibm_colors(), 3)
-        colors = get_colors(thesis_colors(), 3)
+        colors = ['orange', 'red', 'dodgerblue']
     elif len(colors) != 3:
         colors = get_colors(colors, 3)
     
@@ -198,11 +215,11 @@ def plot_segmentation(imgs, names, pms, bps, lvms, colors=[]):
         plt.imshow(imgs[n], cmap='gray')
         for contour in bps[n]:
             try:
-                plt.plot(contour[:, 1], contour[:, 0], color=colors[2], lw=1)
+                plt.plot(contour[:, 1], contour[:, 0], color=colors[0], lw=1)
             except:
                 pass
-        plt.imshow(pms[n], cmap=binary_cmap(colors[0]), alpha=0.4)
-        plt.imshow(lvms[n], cmap=binary_cmap(colors[1]), alpha=0.4)
+        plt.imshow(pms[n], cmap=binary_cmap(colors[1]), alpha=0.4)
+        plt.imshow(lvms[n], cmap=binary_cmap(colors[2]), alpha=0.4)
 
         plt.title(names[n], fontsize=8)
     
@@ -604,7 +621,7 @@ def read_and_segment_dicoms(archive_list, tdim=2, template=[], crop=True, show_b
         plot_segmentation(imgs, namelist, pms, bps, show_bloodpool=show_bloodpool)
         
     # set up returns
-    segs = {'pm': pms, 'bp': bps}
+    segs = {'pm': pms, 'bp': pools, 'bpconts': bps}
     
     return_list = [imgs, segs]
     if returns == 'diameters':
@@ -654,7 +671,7 @@ def get_all_measurements(image_id, template, tdim=2):
                     'pm/lv ratio':  [],
                     'ma':           [],
                     'mwt':          []}
-    segmentations = {'imgs': [], 'bps': [], 'pms': [], 'lvs': [], 'names': []}
+    segmentations = {'imgs': [], 'bps': [], 'bpconts': [], 'pms': [], 'lvs': [], 'names': []}
 
     # get path to zip archive containing CMR scan DICOMs
     img_path = glob('/mnt/project/Bulk/Heart MRI/Short axis/'+str(image_id)[:2]+'/'+str(image_id)+'*_2_0.zip')[0]
@@ -680,14 +697,17 @@ def get_all_measurements(image_id, template, tdim=2):
     _, n = ski.measure.label(seg['pm'][0], return_num=True, connectivity=1)
     measurements['num'] = n
 
-    bp_sum = np.sum(seg['bp'][0])
-    pm_sum = np.sum(seg['pm'][0])
+    bp_sum = np.sum(seg['bp'][0])*px*px
+    pm_sum = np.sum(seg['pm'][0])*px*px
     measurements['pm/lv ratio'] = pm_sum/bp_sum
+    bp_per = ski.measure.perimeter(seg['bp'][0])*px
+    measurements['pm/lv ratio 2'] = pm_sum/bp_per
 
 
     # save segmentations
     segmentations['imgs'] = img[0]
     segmentations['bps'] = seg['bp'][0]
+    segmentations['bpconts'] = seg['bpconts'][0]
     segmentations['pms'] = seg['pm'][0]
     
     # measure ma and mwt
@@ -794,7 +814,7 @@ def plot_measurements(measurements_list, labels, colors=[], save_stats=False):
         plt.ylabel('PM diameters [mm]')
         
         sub += 1
-
+        
         # calculate statistics
         if len(measurements_list) > 1:
             mh = [[group['hdiam1']+group['hdiam2']] for group in measurements_list]
@@ -1071,6 +1091,9 @@ def plot_measurements(measurements_list, labels, colors=[], save_stats=False):
                 _, t = plt.ylim()
                 plt.ylim(top=t*1.1)
     
+    # labels = labels[::3]+labels[1::3]+labels[2::3]  # for two-row legend
+    # colors = colors[::3]+colors[1::3]+colors[2::3]
+    
     patches = [mpl.patches.Patch(facecolor=c+(alpha,), edgecolor='black', label=l) for c, l in zip(colors, labels)]
     
     fig.legend(handles=patches, loc='upper center', bbox_to_anchor=(0.5, 1.10), ncols=len(measurements_list))
@@ -1122,7 +1145,7 @@ def find_matches(df, matchtraits, nmatches, template, match_behaviour='softmatch
                     'pm/lv ratio':  [], 
                     'ma':           [],
                     'mwt':          []}
-    segmentations = {'imgs': [], 'bps': [], 'pms': [], 'lvs': [], 'names': []}
+    segmentations = {'imgs': [], 'bps': [], 'bpconts':[], 'pms': [], 'lvs': [], 'names': []}
     
     if match_behaviour == 'softmatch':
         for trait, value in matchtraits.items():
@@ -1239,7 +1262,7 @@ def quantify_pms(fabry_table_path, control_table_path, template_array, traits=[2
 
     # create segmentations dict
     ## to save image arrays for segmentations plot
-    segmentations = {'imgs': [], 'bps': [], 'pms': [], 'lvs': [], 'names': []}
+    segmentations = {'imgs': [], 'bps': [], 'bpconts': [], 'pms': [], 'lvs': [], 'names': []}
 
     # check ukbb_cardiac installation, break if not found
     if not os.path.isfile('/opt/notebooks/ukbb_cardiac/demo_pipeline_2.py'):
@@ -1296,7 +1319,7 @@ def quantify_pms(fabry_table_path, control_table_path, template_array, traits=[2
 
     # plot segmentations
     if show_segmentations:
-        plot_segmentation(segmentations['imgs'], segmentations['names'], segmentations['pms'], segmentations['bps'], segmentations['lvs'])
+        plot_segmentation(segmentations['imgs'], segmentations['names'], segmentations['pms'], segmentations['bpconts'], segmentations['lvs'])
 
     print('Done.                     ')    
     

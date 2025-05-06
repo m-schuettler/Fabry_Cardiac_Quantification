@@ -1,0 +1,22 @@
+Group,Metric,p value,Distribution
+control,hor. diameters,1e-05,non-normal
+control,vert. diameters,0.00036,non-normal
+control,area,0.13151,normal
+control,num,0.0,non-normal
+control,pm/lv ratio,0.75922,normal
+control,ma,0.0,non-normal
+control,mwt,0.00024,non-normal
+heart attack control,hor. diameters,0.0,non-normal
+heart attack control,vert. diameters,0.0,non-normal
+heart attack control,area,0.01549,non-normal
+heart attack control,num,0.0,non-normal
+heart attack control,pm/lv ratio,0.00373,non-normal
+heart attack control,ma,0.00012,non-normal
+heart attack control,mwt,0.00945,non-normal
+Fabry,hor. diameters,0.14627,normal
+Fabry,vert. diameters,0.45973,normal
+Fabry,area,0.53259,normal
+Fabry,num,0.00544,non-normal
+Fabry,pm/lv ratio,0.14691,normal
+Fabry,ma,0.0182,non-normal
+Fabry,mwt,0.02035,non-normal
