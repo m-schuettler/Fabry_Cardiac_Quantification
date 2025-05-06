@@ -1,4 +1,4 @@
-# Quantification of Cardiac Markers forFabry Disease
+# Quantification of Cardiac Markers for Fabry Disease
 
 This repository contains code for a fully automated image processing pipeline for the recognition and quantification of papillary muscle hypertrophy (PMH) and left ventricular hypertrophy (LVH) from time-resolved 3D short axis CMR scans. Based on the quantification, we are analyzing the diagnostic and prognostic value of several cardiac markers in Fabry disease.
 
