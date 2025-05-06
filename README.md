@@ -28,7 +28,7 @@ Here is a rough outline of what our pipeline does:
 
 Here is a graphical overview of what the main function `quantify_pms()` does:
 
-<img src="data/plots_and_figs/code_structure.png" width="500">
+<img src="data/misc/code_structure.png" width="500">
 
 ## Metrics
 
