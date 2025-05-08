@@ -105,25 +105,13 @@ def auto_crop_ventricle_3D(images, template, padding=5, return_lims=False):
 
     index = 0
     for img in images:
-        # rough cropping
         x, y, t = img.shape
-        # b = 0.19
-        # xmin = int(x*b)
-        # xmax = int(x*(1-b))
-        # ymin = int(y*b)
-        # ymax = int(y*(1-b*1.5))
-        # img = img[xmin:xmax, ymin:ymax, :]
         
         # match template to img
         results = cv2.matchTemplate(img[:, :, 0], template[:, :, 0], cv2.TM_CCOEFF_NORMED)
-        # results = cv2.matchTemplate(img, template, cv2.TM_CCOEFF_NORMED)
         _, _, _, max_loc = cv2.minMaxLoc(results)         # get best match
 
         # crop image
-        # ymin = max_loc[0]-3
-        # ymax = max_loc[0]+template.shape[1]+2
-        # xmin = max_loc[1]
-        # xmax = max_loc[1]+template.shape[0]+5
         ymin = max_loc[0]-int((padding*0.5))
         ymax = max_loc[0]+template.shape[1]+int((padding*0.5)+0.5)
         xmin = max_loc[1]-int((padding*0.5))
@@ -380,8 +368,6 @@ def get_diameters(binary):
     if centroids[0][1] < centroids[1][1]:
         refangle = -refangle
 
-    # print('refangle:', refangle, '°')
-
     # get diameters
 
     hd = []         # gets filled with horizontal diameters
@@ -393,13 +379,13 @@ def get_diameters(binary):
 
         rotated = ski.transform.rotate(thislabel, angle=refangle+90, resize=True, preserve_range=True)
         projection = np.max(rotated, axis=0)
-        # hd.append(np.sum(projection>0))     ## each pixel the object occupies is counted regardless of how much object is in the pixel
-        hd.append(np.sum(projection))      ## pixel values are proportional to how much object is in the pixel and thus weighting the pixel's contribution to the diameter calculation  ## however, this is not always more accurate than the unweighted diameter!
+        # hd.append(np.sum(projection>0))       ## unweighted diameter: each pixel the object occupies is counted regardless of "how much" object is in the pixel
+        hd.append(np.sum(projection))           ## weighted diameter: pixel values are proportional to how much object is in the pixel. however, this is not necessarily more accurate than the unweighted diameter!
 
         rotated = ski.transform.rotate(thislabel, angle=refangle, resize=True, preserve_range=True)
         projection = np.max(rotated, axis=0)
-        # vd.append(np.sum(projection>0))
-        vd.append(np.sum(projection))
+        # vd.append(np.sum(projection>0))       ## unweighted diameter
+        vd.append(np.sum(projection))           ## weighted diameter
 
     return hd, vd
 
@@ -505,8 +491,6 @@ def read_and_segment_dicoms(archive_list, tdim=2, template=[], crop=True, show_b
             else: 
                 print('Invalid value of tdim argument!')
             
-            # preproc = ski.morphology.closing(sliceimg, footprint=np.ones(shape=(3, 3)))
-            
             threshold = ski.filters.threshold_li(sliceimg)
             binary = sliceimg > threshold
             binary = ski.segmentation.clear_border(binary)
@@ -516,10 +500,8 @@ def read_and_segment_dicoms(archive_list, tdim=2, template=[], crop=True, show_b
                 largest_blob = labels == np.argmax(np.bincount(labels[binary]))
 
                 largest_blob = ski.morphology.binary_closing(largest_blob, footprint=np.ones(shape=(11, 11)), mode='min')
-                # largest_blob = ski.morphology.binary_closing(largest_blob)
                 bloodpool = ski.morphology.remove_small_holes(largest_blob, area_threshold=100)
 
-                # bloodpool = ski.morphology.binary_erosion(bloodpool, footprint=np.ones(shape=(3, 3)))
                 bloodpool = ski.morphology.binary_erosion(bloodpool)
 
                 slicepools.append(bloodpool)
@@ -531,7 +513,6 @@ def read_and_segment_dicoms(archive_list, tdim=2, template=[], crop=True, show_b
         # select end-diastole t slice for pm segmentation
         selected = areas.index(np.max(areas)) # selected t slice index
         tslc.append(str(selected))
-        # print('T slice:', selected)
         
         if return_slices:
             selected_slices.append([z, selected])
@@ -570,7 +551,6 @@ def read_and_segment_dicoms(archive_list, tdim=2, template=[], crop=True, show_b
             pm = ski.morphology.remove_small_objects(pm, min_size=3)
         except:
             pass
-        #pm = ski.morphology.binary_opening(pm)  ## maybe remove
         pm = ski.morphology.binary_dilation(pm, footprint=np.ones(shape=(2, 2)))
         
         if sort:
@@ -616,7 +596,7 @@ def read_and_segment_dicoms(archive_list, tdim=2, template=[], crop=True, show_b
     # create diagnostic figure
     if show_images:
         if namelist == []:
-            namelist = [str(i) for i in range(1, 50+1)]      ## if nplots is changed, also change this number!!
+            namelist = [str(i) for i in range(1, 100+1)]      ## if nplots is changed, also change this number!!
         namelist = [namelist[i]+' ('+tslc[i]+'/50)' for i in range(0, min([len(namelist), len(tslc)]))]
         plot_segmentation(imgs, namelist, pms, bps, show_bloodpool=show_bloodpool)
         
@@ -732,7 +712,7 @@ def get_all_measurements(image_id, template, tdim=2):
     
     measurements['ma'] = np.sum(lv_seg)*px*px
     
-    mwt = pd.read_csv(id_path+'/wall_thickness_ED_max.csv').iloc[-1]['Thickness_Max']  ## this is (probably?) in mm already
+    mwt = pd.read_csv(id_path+'/wall_thickness_ED_max.csv').iloc[-1]['Thickness_Max']  ## this is in mm already
     
     measurements['mwt'] = mwt
     
@@ -759,7 +739,6 @@ def plot_measurements(measurements_list, labels, colors=[], save_stats=False):
     '''
     
     if colors == []:
-        # colors = get_colors(ibm_colors(), len(measurements_list))
         colors = get_colors(thesis_colors(), len(measurements_list))
     elif len(colors) != len(measurements_list):
         colors = get_colors(colors, len(measurements_list))
@@ -794,7 +773,7 @@ def plot_measurements(measurements_list, labels, colors=[], save_stats=False):
         for group in measurements_list:
             m.extend([group['vdiam1']+group['vdiam2']])
 
-        # viols = plt.violinplot(m, positions=range(0, len(measurements_list)*2), showmeans=True, showextrema=True)
+        # viols = plt.violinplot(m, positions=range(0, len(measurements_list)*2), showmeans=True, showextrema=True)     ## uncomment for violin plots (and comment out boxplot code)
         # for item in viols:
         #     if item == 'bodies':
         #         for body, color in zip(viols[item], [c for c in colors+colors]):
@@ -856,6 +835,7 @@ def plot_measurements(measurements_list, labels, colors=[], save_stats=False):
         plt.subplot(2, ncols, sub)
 
         m = [group['area'] for group in measurements_list]  # structure measurements for plot
+
         # viols = plt.violinplot(m, positions=range(0, len(measurements_list)), showmeans=True, showextrema=True)
         # for item in viols:
         #     if item == 'bodies':
@@ -904,6 +884,7 @@ def plot_measurements(measurements_list, labels, colors=[], save_stats=False):
         plt.subplot(2, ncols, sub)
 
         m = [group['num'] for group in measurements_list]  # structure measurements for plot
+
         # viols = plt.violinplot(m, positions=range(0, len(measurements_list)), showmeans=True, showextrema=True)
         # for item in viols:
         #     if item == 'bodies':
@@ -952,6 +933,7 @@ def plot_measurements(measurements_list, labels, colors=[], save_stats=False):
         plt.subplot(2, ncols, sub)
 
         m = [group['pm/lv ratio'] for group in measurements_list]  # structure measurements for plot
+
         # viols = plt.violinplot(m, positions=range(0, len(measurements_list)), showmeans=True, showextrema=True)
         # for item in viols:
         #     if item == 'bodies':
@@ -999,6 +981,7 @@ def plot_measurements(measurements_list, labels, colors=[], save_stats=False):
         plt.subplot(2, ncols, sub)
         
         m = [group['ma'] for group in measurements_list]  # structure measurements for plot
+
         # viols = plt.violinplot(m, positions=range(0, len(measurements_list)), showmeans=True, showextrema=True)
         # for item in viols:
         #     if item == 'bodies':
@@ -1047,6 +1030,7 @@ def plot_measurements(measurements_list, labels, colors=[], save_stats=False):
         plt.subplot(2, ncols, sub)
         
         m = [group['mwt'] for group in measurements_list]  # structure measurements for plot
+
         # viols = plt.violinplot(m, positions=range(0, len(measurements_list)), showmeans=True, showextrema=True)
         # for item in viols:
         #     if item == 'bodies':
@@ -1091,7 +1075,7 @@ def plot_measurements(measurements_list, labels, colors=[], save_stats=False):
                 _, t = plt.ylim()
                 plt.ylim(top=t*1.1)
     
-    # labels = labels[::3]+labels[1::3]+labels[2::3]  # for two-row legend
+    # labels = labels[::3]+labels[1::3]+labels[2::3]  ## sort labels and colors for two-row legend
     # colors = colors[::3]+colors[1::3]+colors[2::3]
     
     patches = [mpl.patches.Patch(facecolor=c+(alpha,), edgecolor='black', label=l) for c, l in zip(colors, labels)]
@@ -1181,11 +1165,11 @@ def find_matches(df, matchtraits, nmatches, template, match_behaviour='softmatch
         # try segmentation and quantification
         for match_id in matches:
             if len(mids) >= nmatches:
-                ## while loop does not break as long as the for loop is still running
+                ## while-loop does not break within one iteration
                 ## so check number of mids here, as well
                 break
             m, s = get_all_measurements(match_id, template=template)
-            if not any(v == [] for v in m.values()):     # only use, if all measurements worked
+            if not any(v == [] for v in m.values()):     # only use if all measurements worked
                 mids.append(match_id)
                 [measurements[k].append(m[k]) for k in measurements.keys()]
                 [segmentations[k].append(s[k]) for k in segmentations.keys()]
@@ -1217,6 +1201,8 @@ def quantify_pms(fabry_table_path, control_table_path, template_array, traits=[2
         'areas':        measure cross-section area in mm²
         'numbers':      count PM objects
         'pm/lv ratios': segment LVs (using Wenjia Bai's ukbb_cardiac), measure pm/lv ratio
+        'ma':           measure myocardial cross-section are in mm²
+        'mwt':          measure maximum myocardial wall thickness in mm
 
     arguments:
         fabry_table_path:   file path to table created from fabry imaging cohort containing traits to be matched
@@ -1229,11 +1215,6 @@ def quantify_pms(fabry_table_path, control_table_path, template_array, traits=[2
                                 'duplicate':    duplicate direct matches to compensate for missing matches
                                 'softmatch':    use closest matches for numerical traits (e. g. age)  to compensate for missing matches
         show_segmentations: if True, plot segmentations of bloodpool, PMs and LV
-        measure:            select desired measurements as string or list of strings:
-                                'diameters':    measure horizontal and vertical diameters in mm (according to 10.1186/s12872-023-03463-w)
-                                'areas':        measure cross-section area in mm²
-                                'numbers':      count PM objects
-                                'pm/lv ratios': segment LVs (using Wenjia Bai's ukbb_cardiac), measure pm/lv ratio
 
     returns:
         f_measurements: dataframe containing measurements for fabry group
@@ -1267,8 +1248,8 @@ def quantify_pms(fabry_table_path, control_table_path, template_array, traits=[2
     # check ukbb_cardiac installation, break if not found
     if not os.path.isfile('/opt/notebooks/ukbb_cardiac/demo_pipeline_2.py'):
         if not os.path.exists('/opt/notebooks/ukbb_cardiac'):
-            print('\n!! Installation of \'ukbb_cardiac\' module was not found. Please install the forked repo (https://github.com/BioMeDS/ukbb_cardiac) to \'/opt/notebooks/ukbb_cardiac/\' and try again.')
-        print('!! \'demo_pipeline_2.py\' was not found. Please download the file from the project folder to \'/opt/notebooks/ukbb_cardiac/\' and try again.')
+            print('\n!! Installation of \'ukbb_cardiac\' module was not found. Please install the BioMeDS fork (https://github.com/BioMeDS/ukbb_cardiac) to \'/opt/notebooks/ukbb_cardiac/\' and try again.')
+        print('!! \'demo_pipeline_2.py\' was not found. Please download it to \'/opt/notebooks/ukbb_cardiac/\' and try again.')
         return
 
     # iterate over fabry ids
