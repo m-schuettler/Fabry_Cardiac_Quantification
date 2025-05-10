@@ -5,7 +5,7 @@ This repository contains code for a fully automated image processing pipeline fo
 
 ## This Repository
 
-The code in this repository is made for use on the UK Biobank Research Analysis Platform (UKB RAP) (`code_ukb/`), but is also available for local use for analysis of data available from our collaborators at the Fabry Center for Inderdisciplinary Therapy (FAZiT) Würzburg (`code_local/`). The code for local use was created for Windows 11 and was not tested on other operating systems, but should be mostly platform-independent.
+The code in this repository is made for use on the **UK Biobank Research Analysis Platform (UKB RAP)** (`code_ukb/`), but is also available for local use for analysis of data available from our collaborators at the Fabry Center for Inderdisciplinary Therapy (FAZiT) Würzburg (`code_local/`). The code for local use was created for Windows 11 and was not tested on other operating systems, but should be mostly platform-independent.
 
 Both of these folders contain a JupyterNotebook used to run the analysis, a `pmfunctions.py` script containing the functions for segmentation and quantification. The UK Biobank folder also contains a `demo_pipeline_2.py` file for running the `ukbb_cardiac` tool (see below). Both folders also contain a list of all utilized package versions (`pip freeze`) in `requirements.txt`.
 

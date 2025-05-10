@@ -680,8 +680,8 @@ def get_all_measurements(image_id, template, tdim=2):
     bp_sum = np.sum(seg['bp'][0])*px*px
     pm_sum = np.sum(seg['pm'][0])*px*px
     measurements['pm/lv ratio'] = pm_sum/bp_sum
-    bp_per = ski.measure.perimeter(seg['bp'][0])*px
-    measurements['pm/lv ratio 2'] = pm_sum/bp_per
+    # bp_peri = ski.measure.perimeter(seg['bp'][0])*px
+    # measurements['pm/lv ratio 2'] = pm_sum/bp_peri
 
 
     # save segmentations
