@@ -1087,9 +1087,8 @@ def plot_measurements(measurements_list, labels, colors=[], save_stats=False):
 
 
     nsubs = sum([m in measurements_list[0] for m in ['hdiam1', 'area', 'num', 'pm/lv ratio', 'ma', 'mwt']])
-    print('nsubs:', nsubs)
     ncols = int((nsubs+1)/2)
-    fig, _ = plt.subplots(1, ncols, figsize=(ncols*3, 5))
+    fig, _ = plt.subplots(2, ncols, figsize=(ncols*3, 5))
 
     sub = 1
 
