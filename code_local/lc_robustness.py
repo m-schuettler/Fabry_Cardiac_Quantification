@@ -6,7 +6,7 @@ These functions test the robustness of the pm quantification.
 import cv2
 from glob import glob
 from math import pi
-from matplotlib import gridspec
+from matplotlib.gridspec import GridSpec
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 import nibabel as nib
@@ -176,7 +176,7 @@ def segment_pm_2D_v2(images, template=[], namelist=[], crop=True, show_bloodpool
 
     return imgs, pms, pools
 
-    
+
 def test_pm_robustness(archive_list, template_array, selected_slices, show_images=False):
     '''
     Quantify PMH over all suitable Z and T slices and show results as a heatmap.
@@ -192,9 +192,13 @@ def test_pm_robustness(archive_list, template_array, selected_slices, show_image
     
     if not show_images:
         # fig, axes = plt.subplots(nrows=int(len(archive_list)/2), ncols=2, figsize=(7, 0.8*len(archive_list)), layout='compressed')
-        fig, axes = plt.subplots(nrows=int(len(archive_list)), figsize=(3, 1.5*len(archive_list)), layout='tight')
+        # fig, axes = plt.subplots(nrows=int(len(archive_list)), figsize=(3, 1.5*len(archive_list)), layout='tight')
         # fig.suptitle('PM areas over Z and T slices')
+        fig = plt.figure(figsize=(3, 1.5*len(archive_list)))
+        gs = GridSpec(len(archive_list), 1, hspace=0.5)
     
+    heights = []  ## gets filled with heights of subplots (number of z slices)
+
     for i, archive_path in enumerate(archive_list):
         print('Quantifying archive ', archive_list.index(archive_path)+1, '/', len(archive_list), '...', sep='', end='\r')
 
@@ -211,7 +215,8 @@ def test_pm_robustness(archive_list, template_array, selected_slices, show_image
         if fails != []:
             print('Cropping of archive ', name, ' (',(i+1), '/', len(archive_list), ') failed. This image is skipped.', sep='')
             if not show_images:
-                plt.subplot(len(archive_list), 1, i+1)
+                # plt.subplot(len(archive_list), 1, i+1)
+                fig.add_subplot(gs[i])
                 plt.imshow(np.full([10, 50], np.nan))
                 plt.xticks([])
                 plt.yticks([])
@@ -252,7 +257,8 @@ def test_pm_robustness(archive_list, template_array, selected_slices, show_image
                     these_pm_areas[z, t] = np.sum(pms[z])*px*px
         if not show_images:
             # plot pm areas
-            plt.subplot(len(archive_list), 1, i+1)
+            # plt.subplot(len(archive_list), 1, i+1)
+            fig.add_subplot(gs[i])
             if i == 0:
                 plt.ylabel('Z Slice', loc='top')
             # plt.gca().set_title(str(name), fontsize='medium', loc='left')
@@ -272,11 +278,11 @@ def test_pm_robustness(archive_list, template_array, selected_slices, show_image
         
         rows, cols = these_pm_areas.shape
         
-        z_start, z_end = selected_slices[i][0]-z_neighbors % rows, selected_slices[i][0]+z_neighbors % rows
-        t_start, t_end = selected_slices[i][1]-t_neighbors % cols, selected_slices[i][1]+t_neighbors % cols
+        z_start, z_end = selected_slices[i][0]-z_neighbors % rows, selected_slices[i][0]+z_neighbors+1 % rows
+        t_start, t_end = selected_slices[i][1]-t_neighbors % cols, selected_slices[i][1]+t_neighbors+1 % cols
         
-        z_start, t_start = [start if start >= 0 else 25+start for start in [z_start, t_start]]
-        z_end, t_end = [end if end < 25 else end-25 for end in [z_end, t_end]]
+        z_start, t_start = [start if start >= 0 else cols+start for start in [z_start, t_start]]
+        z_end, t_end = [end if end < cols else end-cols for end in [z_end, t_end]]
         
         if z_start > z_end:
             z_indices = np.r_[z_start:rows, 0:z_end]
@@ -300,10 +306,16 @@ def test_pm_robustness(archive_list, template_array, selected_slices, show_image
             if t_start > t_end:
                 rectangle = plt.Rectangle((t_start-0.52, z_start-0.52), t_neighbors*2+1, z_neighbors*2+1, fill=False, color='white', zorder=2)
                 plt.gca().add_patch(rectangle)
-                rectangle = plt.Rectangle((0-0.52, z_start-0.52), t_end+1, z_neighbors*2+1, fill=False, color='white', zorder=2)
+                rectangle = plt.Rectangle((0-0.52, z_start-0.52), t_end, z_neighbors*2+1, fill=False, color='white', zorder=2)
                 plt.gca().add_patch(rectangle)
             else:
                 rectangle = plt.Rectangle((selected_slices[i][1]-t_neighbors-0.52, selected_slices[i][0]-z_neighbors-0.52), t_neighbors*2+1, z_neighbors*2+1, fill=False, color='white', zorder=2)
                 plt.gca().add_patch(rectangle)
+
+            # update height ratios to make all subplots the same width
+            heights.append(these_pm_areas.shape[0])
+
+    gs.set_height_ratios(heights)
+    gs.update()
 
     print('                                                   ')
