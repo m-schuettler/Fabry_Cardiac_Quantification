@@ -17,7 +17,7 @@ import skimage as ski
 from statistics import stdev
 import warnings
 
-import lc_functions as pmf
+import lc_pmfunctions as pmf
 
 
 def auto_crop_ventricle_4D(images, template):
@@ -51,7 +51,9 @@ def auto_crop_ventricle_4D(images, template):
         # img = img[xmin:xmax, ymin:ymax, :, :]
         
         # match template to img
-        results = cv2.matchTemplate(img[:, :, 4, 0], template[:, :, 4, 0], cv2.TM_CCOEFF_NORMED)
+        z_img = int(img.shape[2]/2)
+        z_tmp = 6
+        results = cv2.matchTemplate(img[:, :, z_img, 0], template[:, :, z_tmp, 0], cv2.TM_CCOEFF_NORMED)
         _, _, _, max_loc = cv2.minMaxLoc(results)         # get best match
 
         ymin = max_loc[0]-3
@@ -121,16 +123,19 @@ def segment_pm_2D_v2(images, template=[], namelist=[], crop=True, show_bloodpool
         binary = ski.segmentation.clear_border(binary)
 
         labels, nlabels = ski.measure.label(binary, return_num=True)
-        try:
+        if nlabels != 0:
             largest_blob = labels == np.argmax(np.bincount(labels[binary]))
-        except ValueError:  # if labels does not contain any labels
-            largest_blob = labels
 
-        # largest_blob = ski.morphology.binary_closing(largest_blob, footprint=np.ones(shape=(11, 11)), mode='min')
-        largest_blob = ski.morphology.binary_dilation(largest_blob, footprint=np.ones(shape=(15, 15)), mode='min')
-        # bloodpool = ski.morphology.remove_small_holes(largest_blob, area_threshold=100)
-        bloodpool = ski.morphology.remove_small_holes(largest_blob, area_threshold=200)
-        bloodpool = ski.morphology.binary_erosion(bloodpool, footprint=np.ones(shape=(15, 15)), mode='min')
+            # largest_blob = ski.morphology.binary_closing(largest_blob, footprint=np.ones(shape=(11, 11)), mode='min')
+            largest_blob = ski.morphology.binary_dilation(largest_blob, footprint=np.ones(shape=(15, 15)), mode='min')
+            # bloodpool = ski.morphology.remove_small_holes(largest_blob, area_threshold=100)
+            bloodpool = ski.morphology.remove_small_holes(largest_blob, area_threshold=200)
+            bloodpool = ski.morphology.binary_erosion(bloodpool, footprint=np.ones(shape=(15, 15)), mode='min')
+
+            # bloodpool = ski.morphology.binary_erosion(bloodpool, footprint=np.ones(shape=(3, 3)))
+            # bloodpool = ski.morphology.binary_erosion(bloodpool)
+        else:
+            bloodpool = np.zeros_like(binary)
 
         # segment papillary muscles in blood pool mask
         lv_contents = img*bloodpool

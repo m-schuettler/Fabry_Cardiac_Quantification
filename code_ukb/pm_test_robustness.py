@@ -6,9 +6,8 @@ These functions test the robustness of the pm quantification.
 import cv2
 from glob import glob
 from math import pi
-from matplotlib import gridspec
+from matplotlib.gridspec import GridSpec
 import matplotlib.pyplot as plt
-from mpl_toolkits.axes_grid1 import make_axes_locatable
 import numpy as np
 import seaborn as sns
 import skimage as ski
@@ -185,8 +184,11 @@ def test_pm_robustness(ids, template_array, selected_slices, show_images=False):
     ids = [str(i) for i in ids]
     
     if not show_images:
-        fig, axes = plt.subplots(nrows=len(ids), figsize=(7, 1.5*len(ids)), layout='compressed')
-        # fig.suptitle('PM areas over Z and T slices')
+        # fig, axes = plt.subplots(nrows=len(ids), figsize=(7, 1.5*len(ids)), layout='compressed')
+        fig = plt.figure(figsize=(7, 1.5*len(ids)))
+        gs = GridSpec(len(ids), 1, hspace=0.5)
+    
+    heights = []  ## gets filled with heights of subplots (number of z slices)
     
     for i, this_id in zip(range(0, len(ids)), ids):
         print('Quantifying archive ', this_id, ' (',(i+1), '/', len(ids), ')...', sep='', end='\r')
@@ -200,7 +202,8 @@ def test_pm_robustness(ids, template_array, selected_slices, show_images=False):
         if fails != []:
             print('Cropping of archive ', this_id, ' (',(i+1), '/', len(ids), ') failed. This image is skipped.', sep='')
             if not show_images:
-                plt.subplot(len(ids), 1, i+1)
+                # plt.subplot(len(ids), 1, i+1)
+                fig.add_subplot(gs[i])
                 plt.imshow(np.full([10, 50], np.nan))
                 plt.xticks([])
                 plt.yticks([])
@@ -221,18 +224,18 @@ def test_pm_robustness(ids, template_array, selected_slices, show_images=False):
             
             # filter out unsuitable z slices using circularity/isometric quotient
             drop = []
-            for j, bloodpool in zip(range(0, len(pools)), pools):
-                bloodpool = ski.measure.label(bloodpool)
-                warnings.filterwarnings('error')  # to catch RuntimeWarning in except
-                try:
-                    props = ski.measure.regionprops(bloodpool)
-                    perimeter = props[0].perimeter
-                    area = props[0].area
-                    c = (4*pi*area)/(perimeter**2)  # isometric quotient        ## for a while, I used this to sort out the slices
-                except (RuntimeWarning, IndexError):
-                    c = 0
-                if c < 0.6 or c > 1 or np.sum(bloodpool) < 100 or np.sum(bloodpool) > 900:
-                    drop.append(j)
+            # for j, bloodpool in zip(range(0, len(pools)), pools):
+            #     bloodpool = ski.measure.label(bloodpool)
+            #     warnings.filterwarnings('error')  # to catch RuntimeWarning in except
+            #     try:
+            #         props = ski.measure.regionprops(bloodpool)
+            #         perimeter = props[0].perimeter
+            #         area = props[0].area
+            #         c = (4*pi*area)/(perimeter**2)  # isometric quotient        ## for a while, I used this to sort out the slices
+            #     except (RuntimeWarning, IndexError):
+            #         c = 0
+            #     if c < 0.6 or c > 1 or np.sum(bloodpool) < 100 or np.sum(bloodpool) > 900:
+            #         drop.append(j)
                 # print('iq:', c)
                 # print('bp area:', np.sum(bloodpool))
             
@@ -241,7 +244,8 @@ def test_pm_robustness(ids, template_array, selected_slices, show_images=False):
                     these_pm_areas[z, t] = np.sum(pms[z])*px*px
         if not show_images:
             # plot pm areas
-            plt.subplot(len(ids), 1, i+1)
+            # plt.subplot(len(ids), 1, i+1)
+            fig.add_subplot(gs[i])
             if i == 0:
                 plt.ylabel('Z Slice', loc='top')
             plt.gca().set_title(str(this_id), fontsize='medium', loc='left')
@@ -261,8 +265,8 @@ def test_pm_robustness(ids, template_array, selected_slices, show_images=False):
         
         rows, cols = these_pm_areas.shape
         
-        z_start, z_end = selected_slices[i][0]-z_neighbors % rows, selected_slices[i][0]+z_neighbors % rows
-        t_start, t_end = selected_slices[i][1]-t_neighbors % cols, selected_slices[i][1]+t_neighbors % cols
+        z_start, z_end = selected_slices[i][0]-z_neighbors % rows, selected_slices[i][0]+z_neighbors+1 % rows
+        t_start, t_end = selected_slices[i][1]-t_neighbors % cols, selected_slices[i][1]+t_neighbors+1 % cols
         
         z_start, t_start = [start if start >= 0 else 50+start for start in [z_start, t_start]]
         z_end, t_end = [end if end < 50 else end-50 for end in [z_end, t_end]]
@@ -290,6 +294,12 @@ def test_pm_robustness(ids, template_array, selected_slices, show_images=False):
             else:
                 rectangle = plt.Rectangle((selected_slices[i][1]-t_neighbors-0.52, selected_slices[i][0]-z_neighbors-0.52), t_neighbors*2+1, z_neighbors*2+1, fill=False, color='white', zorder=2)
                 plt.gca().add_patch(rectangle)
+
+            # update height ratios to make all subplots the same width
+            heights.append(these_pm_areas.shape[0])
+
+    gs.set_height_ratios(heights)
+    gs.update()
         
     
     print('                                                   ')
